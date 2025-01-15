@@ -38,6 +38,12 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	// TODO: implement the upload here
+	video, err := cfg.db.GetVideo(videoID)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "User is not the video owner", err)
+		return
+	}
+
 	const maxMemory = 10 << 20
 	err = r.ParseMultipartForm(maxMemory)
 	if err != nil {
@@ -50,14 +56,20 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		respondWithError(w, http.StatusInternalServerError, "Couldn't access thumbnail file or header", err)
 		return
 	}
+	defer file.Close()
+
 	contentType := header.Header.Get("Content-Type")
 
-	video, err := cfg.db.GetVideo(videoID)
-	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "User is not the video owner", err)
-		return
-	}
-
+  mediaType, _, err := mime.ParseMediaType(contentType)
+  if err != nil {
+    respondWithError(w, http.StatusUnauthorized, "Problem identifying mediaType", err)
+    return
+  }
+  if mediaType != "image/jpeg" && mediaType != "image/png" {
+    respondWithError(w, http.StatusUnauthorized, "Media type not allowed", err)
+    return
+  }
+  
 	randBytes := make([]byte, 32)
 	_, err = rand.Read(randBytes)
 	randString := base64.RawURLEncoding.EncodeToString(randBytes)
@@ -71,15 +83,6 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		respondWithError(w, http.StatusUnauthorized, "Problem identifying mediaType", err)
-		return
-	}
-	if mediaType != "image/jpeg" && mediaType != "image/png" {
-		respondWithError(w, http.StatusUnauthorized, "Media type not allowed", err)
-		return
-	}
 
 	_, err = io.Copy(newFile, file)
 	if err != nil {
